@@ -1,6 +1,6 @@
 /*!
  * Signature Pad v3.0.0-beta.4 | https://github.com/szimek/signature_pad
- * (c) 2020 Szymon Nowak | Released under the MIT license
+ * (c) 2021 Szymon Nowak | Released under the MIT license
  */
 
 (function (global, factory) {
@@ -141,19 +141,43 @@
             if (options === void 0) { options = {}; }
             this.canvas = canvas;
             this.options = options;
+            this._handlePointerDown = function (event) {
+                event.preventDefault();
+                if (_this._pointerID === undefined) {
+                    _this._pointerID = event.pointerId;
+                    _this._strokeBegin(event);
+                }
+            };
+            this._handlePointerMove = function (event) {
+                event.preventDefault();
+                if (_this._pointerID === event.pointerId) {
+                    _this._strokeMoveUpdate(event);
+                }
+            };
+            this._handlePointerUp = function (event) {
+                var wasCanvasTouched = event.target === _this.canvas;
+                if (wasCanvasTouched && _this._pointerID === event.pointerId) {
+                    event.preventDefault();
+                    _this._strokeEnd(event);
+                    _this._pointerID = undefined;
+                }
+            };
             this._handleMouseDown = function (event) {
-                if (event.which === 1) {
+                event.preventDefault();
+                if (event.button === 1) {
                     _this._mouseButtonDown = true;
                     _this._strokeBegin(event);
                 }
             };
             this._handleMouseMove = function (event) {
+                event.preventDefault();
                 if (_this._mouseButtonDown) {
                     _this._strokeMoveUpdate(event);
                 }
             };
             this._handleMouseUp = function (event) {
-                if (event.which === 1 && _this._mouseButtonDown) {
+                event.preventDefault();
+                if (event.button === 1 && _this._mouseButtonDown) {
                     _this._mouseButtonDown = false;
                     _this._strokeEnd(event);
                 }
@@ -162,20 +186,28 @@
                 event.preventDefault();
                 if (event.targetTouches.length === 1) {
                     var touch = event.changedTouches[0];
+                    _this._pointerID = touch.identifier;
                     _this._strokeBegin(touch);
                 }
             };
             this._handleTouchMove = function (event) {
                 event.preventDefault();
-                var touch = event.targetTouches[0];
-                _this._strokeMoveUpdate(touch);
+                if (_this._pointerID !== undefined) {
+                    var touch = event.targetTouches.item(_this._pointerID);
+                    if (touch) {
+                        _this._strokeMoveUpdate(touch);
+                    }
+                }
             };
             this._handleTouchEnd = function (event) {
                 var wasCanvasTouched = event.target === _this.canvas;
-                if (wasCanvasTouched) {
+                if (wasCanvasTouched && _this._pointerID !== undefined) {
                     event.preventDefault();
-                    var touch = event.changedTouches[0];
-                    _this._strokeEnd(touch);
+                    var touch = event.changedTouches.item(_this._pointerID);
+                    if (touch) {
+                        _this._strokeEnd(touch);
+                        _this._pointerID = undefined;
+                    }
                 }
             };
             this.velocityFilterWeight = options.velocityFilterWeight || 0.7;
@@ -335,9 +367,9 @@
         };
         SignaturePad.prototype._handlePointerEvents = function () {
             this._mouseButtonDown = false;
-            this.canvas.addEventListener('pointerdown', this._handleMouseDown);
-            this.canvas.addEventListener('pointermove', this._handleMouseMove);
-            document.addEventListener('pointerup', this._handleMouseUp);
+            this.canvas.addEventListener('pointerdown', this._handlePointerDown);
+            this.canvas.addEventListener('pointermove', this._handlePointerMove);
+            document.addEventListener('pointerup', this._handlePointerUp);
         };
         SignaturePad.prototype._handleMouseEvents = function () {
             this._mouseButtonDown = false;

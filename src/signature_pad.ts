@@ -59,7 +59,8 @@ export default class SignaturePad {
   private _data: PointGroup[]; // Stores all points in groups (one group per line or dot)
   private _lastVelocity: number;
   private _lastWidth: number;
-  private _strokeMoveUpdate: (event: MouseEvent | Touch) => void;
+  private _strokeMoveUpdate: (event: PointerEvent | MouseEvent | Touch) => void;
+  private _pointerID?: number;
   /* tslint:enable: variable-name */
 
   constructor(
@@ -199,21 +200,58 @@ export default class SignaturePad {
   }
 
   // Event handlers
+
+  private _handlePointerDown = (event: PointerEvent): void => {
+    // Prevent scrolling.
+    event.preventDefault();
+
+    if (this._pointerID === undefined) {
+      this._pointerID = event.pointerId;
+      this._strokeBegin( event);
+    }
+  };
+
+  private _handlePointerMove = (event: PointerEvent): void => {
+    // Prevent scrolling.
+    event.preventDefault();
+
+    if (this._pointerID === event.pointerId) {
+      this._strokeMoveUpdate(event);
+    }
+  };
+
+  private _handlePointerUp = (event: PointerEvent): void => {
+    const wasCanvasTouched = event.target === this.canvas;
+    if (wasCanvasTouched && this._pointerID === event.pointerId) {
+      event.preventDefault();
+
+      this._strokeEnd(event);
+
+      this._pointerID = undefined;
+    }
+  };
+
   private _handleMouseDown = (event: MouseEvent): void => {
-    if (event.which === 1) {
+    event.preventDefault();
+
+    if (event.button === 1) {
       this._mouseButtonDown = true;
       this._strokeBegin(event);
     }
   };
 
   private _handleMouseMove = (event: MouseEvent): void => {
+    event.preventDefault();
+
     if (this._mouseButtonDown) {
       this._strokeMoveUpdate(event);
     }
   };
 
   private _handleMouseUp = (event: MouseEvent): void => {
-    if (event.which === 1 && this._mouseButtonDown) {
+    event.preventDefault();
+
+    if (event.button === 1 && this._mouseButtonDown) {
       this._mouseButtonDown = false;
       this._strokeEnd(event);
     }
@@ -225,6 +263,7 @@ export default class SignaturePad {
 
     if (event.targetTouches.length === 1) {
       const touch = event.changedTouches[0];
+      this._pointerID = touch.identifier;
       this._strokeBegin(touch);
     }
   };
@@ -233,22 +272,30 @@ export default class SignaturePad {
     // Prevent scrolling.
     event.preventDefault();
 
-    const touch = event.targetTouches[0];
-    this._strokeMoveUpdate(touch);
+    if (this._pointerID !== undefined) {
+      const touch = event.targetTouches.item(this._pointerID);
+      if (touch) {
+        this._strokeMoveUpdate(touch);
+      }
+    }
   };
 
   private _handleTouchEnd = (event: TouchEvent): void => {
     const wasCanvasTouched = event.target === this.canvas;
-    if (wasCanvasTouched) {
+    if (wasCanvasTouched && this._pointerID !== undefined) {
       event.preventDefault();
 
-      const touch = event.changedTouches[0];
-      this._strokeEnd(touch);
+      const touch = event.changedTouches.item(this._pointerID);
+      if (touch) {
+        this._strokeEnd(touch);
+
+        this._pointerID = undefined;
+      }
     }
   };
 
   // Private methods
-  private _strokeBegin(event: MouseEvent | Touch): void {
+  private _strokeBegin(event: PointerEvent | MouseEvent | Touch): void {
     const newPointGroup = {
       color: this.penColor,
       points: [],
@@ -263,7 +310,7 @@ export default class SignaturePad {
     this._strokeUpdate(event);
   }
 
-  private _strokeUpdate(event: MouseEvent | Touch): void {
+  private _strokeUpdate(event: PointerEvent | MouseEvent | Touch): void {
     if (this._data.length === 0) {
       // This can happen if clear() was called while a signature is still in progress,
       // or if there is a race condition between start/update events.
@@ -302,7 +349,7 @@ export default class SignaturePad {
     }
   }
 
-  private _strokeEnd(event: MouseEvent | Touch): void {
+  private _strokeEnd(event: PointerEvent | MouseEvent | Touch): void {
     this._strokeUpdate(event);
 
     if (typeof this.onEnd === 'function') {
@@ -313,9 +360,9 @@ export default class SignaturePad {
   private _handlePointerEvents(): void {
     this._mouseButtonDown = false;
 
-    this.canvas.addEventListener('pointerdown', this._handleMouseDown);
-    this.canvas.addEventListener('pointermove', this._handleMouseMove);
-    document.addEventListener('pointerup', this._handleMouseUp);
+    this.canvas.addEventListener('pointerdown', this._handlePointerDown);
+    this.canvas.addEventListener('pointermove', this._handlePointerMove);
+    document.addEventListener('pointerup', this._handlePointerUp);
   }
 
   private _handleMouseEvents(): void {

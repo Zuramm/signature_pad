@@ -214,9 +214,7 @@
             this.minWidth = options.minWidth || 0.5;
             this.maxWidth = options.maxWidth || 2.5;
             this.throttle = ('throttle' in options ? options.throttle : 16);
-            this.minDistance = ('minDistance' in options
-                ? options.minDistance
-                : 5);
+            this.minDistance = ('minDistance' in options ? options.minDistance : 5);
             this.dotSize =
                 options.dotSize ||
                     function dotSize() {
@@ -226,6 +224,7 @@
             this.backgroundColor = options.backgroundColor || 'rgba(0,0,0,0)';
             this.onBegin = options.onBegin;
             this.onEnd = options.onEnd;
+            this.transform = options.transform;
             this._strokeMoveUpdate = this.throttle
                 ? throttle(SignaturePad.prototype._strokeUpdate, this.throttle)
                 : SignaturePad.prototype._strokeUpdate;
@@ -320,10 +319,11 @@
         SignaturePad.prototype._strokeBegin = function (event) {
             var newPointGroup = {
                 color: this.penColor,
+                data: undefined,
                 points: []
             };
             if (typeof this.onBegin === 'function') {
-                this.onBegin(event);
+                newPointGroup.data = this.onBegin(event);
             }
             this._data.push(newPointGroup);
             this._reset();
@@ -336,6 +336,11 @@
             }
             var x = event.clientX;
             var y = event.clientY;
+            if (this.transform) {
+                var point_1 = this.transform(x, y);
+                x = point_1[0];
+                y = point_1[1];
+            }
             var point = this._createPoint(x, y);
             var lastPointGroup = this._data[this._data.length - 1];
             var lastPoints = lastPointGroup.points;
@@ -469,6 +474,9 @@
             for (var _i = 0, pointGroups_1 = pointGroups; _i < pointGroups_1.length; _i++) {
                 var group = pointGroups_1[_i];
                 var color = group.color, points = group.points;
+                if (this.applyData) {
+                    this.applyData(group);
+                }
                 if (points.length > 1) {
                     for (var j = 0; j < points.length; j += 1) {
                         var basicPoint = points[j];

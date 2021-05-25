@@ -30,6 +30,8 @@ export interface Options {
   velocityFilterWeight?: number;
   onBegin?: (event: MouseEvent | Touch) => void;
   onEnd?: (event: MouseEvent | Touch) => void;
+  applyData?: (data: any) => any;
+  transform?: (x: number, y: number) => [number, number];
 }
 
 export interface PointGroup {
@@ -49,6 +51,8 @@ export default class SignaturePad {
   public velocityFilterWeight: number;
   public onBegin?: (event: MouseEvent | Touch) => void;
   public onEnd?: (event: MouseEvent | Touch) => void;
+  public applyData?: (data: any) => any;
+  public transform?: (x: number, y: number) => [number, number];
 
   // Private stuff
   /* tslint:disable: variable-name */
@@ -71,9 +75,9 @@ export default class SignaturePad {
     this.minWidth = options.minWidth || 0.5;
     this.maxWidth = options.maxWidth || 2.5;
     this.throttle = ('throttle' in options ? options.throttle : 16) as number; // in milisecondss
-    this.minDistance = ('minDistance' in options
-      ? options.minDistance
-      : 5) as number; // in pixels
+    this.minDistance = (
+      'minDistance' in options ? options.minDistance : 5
+    ) as number; // in pixels
     this.dotSize =
       options.dotSize ||
       function dotSize(this: SignaturePad): number {
@@ -83,6 +87,7 @@ export default class SignaturePad {
     this.backgroundColor = options.backgroundColor || 'rgba(0,0,0,0)';
     this.onBegin = options.onBegin;
     this.onEnd = options.onEnd;
+    this.transform = options.transform;
 
     this._strokeMoveUpdate = this.throttle
       ? throttle(SignaturePad.prototype._strokeUpdate, this.throttle)
@@ -207,7 +212,7 @@ export default class SignaturePad {
 
     if (this._pointerID === undefined) {
       this._pointerID = event.pointerId;
-      this._strokeBegin( event);
+      this._strokeBegin(event);
     }
   };
 
@@ -298,11 +303,12 @@ export default class SignaturePad {
   private _strokeBegin(event: PointerEvent | MouseEvent | Touch): void {
     const newPointGroup = {
       color: this.penColor,
+      data: <any>undefined,
       points: [],
     };
 
     if (typeof this.onBegin === 'function') {
-      this.onBegin(event);
+      newPointGroup.data = this.onBegin(event);
     }
 
     this._data.push(newPointGroup);
@@ -318,8 +324,14 @@ export default class SignaturePad {
       return;
     }
 
-    const x = event.clientX;
-    const y = event.clientY;
+    let x = event.clientX;
+    let y = event.clientY;
+
+    if (this.transform) {
+      const point = this.transform(x, y);
+      x = point[0];
+      y = point[1];
+    }
 
     const point = this._createPoint(x, y);
     const lastPointGroup = this._data[this._data.length - 1];
@@ -517,6 +529,10 @@ export default class SignaturePad {
   ): void {
     for (const group of pointGroups) {
       const { color, points } = group;
+
+      if (this.applyData) {
+        this.applyData(group);
+      }
 
       if (points.length > 1) {
         for (let j = 0; j < points.length; j += 1) {

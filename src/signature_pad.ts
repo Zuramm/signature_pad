@@ -3,7 +3,7 @@
  * http://corner.squareup.com/2012/07/smoother-signatures.html
  *
  * Implementation of interpolation using cubic Bézier curves is taken from:
- * http://www.benknowscode.com/2012/09/path-interpolation-using-cubic-bezier_9742.html
+ * https://web.archive.org/web/20160323213433/http://www.benknowscode.com/2012/09/path-interpolation-using-cubic-bezier_9742.html
  *
  * Algorithm for approximated length of a Bézier curve is taken from:
  * http://www.lemoda.net/maths/bezier-length/index.html
@@ -19,15 +19,24 @@ declare global {
   }
 }
 
-export interface Options {
-  dotSize?: number | (() => number);
-  minWidth?: number;
-  maxWidth?: number;
+export type SignatureEvent = MouseEvent | Touch | PointerEvent;
+
+export interface FromDataOptions {
+  clear?: boolean;
+}
+
+export interface PointGroupOptions {
+  dotSize: number;
+  minWidth: number;
+  maxWidth: number;
+  penColor: string;
+}
+
+export interface Options extends Partial<PointGroupOptions> {
   minDistance?: number;
-  backgroundColor?: string;
-  penColor?: string;
-  throttle?: number;
   velocityFilterWeight?: number;
+  backgroundColor?: string;
+  throttle?: number;
   onBegin?: (event: MouseEvent | Touch) => void;
   onEnd?: (event: MouseEvent | Touch) => void;
   applyData?: (data: any) => any;
@@ -35,21 +44,20 @@ export interface Options {
   usePointerEvents?: boolean;
 }
 
-export interface PointGroup {
-  color: string;
+export interface PointGroup extends PointGroupOptions {
   points: BasicPoint[];
 }
 
-export default class SignaturePad {
+export default class SignaturePad extends EventTarget {
   // Public stuff
-  public dotSize: number | (() => number);
+  public dotSize: number;
   public minWidth: number;
   public maxWidth: number;
-  public minDistance: number;
-  public backgroundColor: string;
   public penColor: string;
-  public throttle: number;
+  public minDistance: number;
   public velocityFilterWeight: number;
+  public backgroundColor: string;
+  public throttle: number;
   public onBegin?: (event: MouseEvent | Touch) => void;
   public onEnd?: (event: MouseEvent | Touch) => void;
   public applyData?: (data: any) => any;
@@ -59,20 +67,21 @@ export default class SignaturePad {
   // Private stuff
   /* tslint:disable: variable-name */
   private _ctx: CanvasRenderingContext2D;
-  private _mouseButtonDown: boolean;
+  private _drawningStroke: boolean;
   private _isEmpty: boolean;
   private _lastPoints: Point[]; // Stores up to 4 most recent points; used to generate a new curve
   private _data: PointGroup[]; // Stores all points in groups (one group per line or dot)
   private _lastVelocity: number;
   private _lastWidth: number;
-  private _strokeMoveUpdate: (event: PointerEvent | MouseEvent | Touch) => void;
+  private _strokeMoveUpdate: (event: SignatureEvent) => void;
   private _pointerID?: number;
   /* tslint:enable: variable-name */
 
   constructor(
     private canvas: HTMLCanvasElement,
-    private options: Options = {},
+    options: Options = {},
   ) {
+    super();
     this.velocityFilterWeight = options.velocityFilterWeight || 0.7;
     this.minWidth = options.minWidth || 0.5;
     this.maxWidth = options.maxWidth || 2.5;
@@ -80,11 +89,7 @@ export default class SignaturePad {
     this.minDistance = (
       'minDistance' in options ? options.minDistance : 5
     ) as number; // in pixels
-    this.dotSize =
-      options.dotSize ||
-      function dotSize(this: SignaturePad): number {
-        return (this.minWidth + this.maxWidth) / 2;
-      };
+    this.dotSize = options.dotSize || 0;
     this.penColor = options.penColor || 'black';
     this.backgroundColor = options.backgroundColor || 'rgba(0,0,0,0)';
     this.onBegin = options.onBegin;
@@ -118,30 +123,36 @@ export default class SignaturePad {
 
   public fromDataURL(
     dataUrl: string,
-    options: { ratio?: number; width?: number; height?: number } = {},
-    callback?: (error?: string | Event) => void,
-  ): void {
-    const image = new Image();
-    const ratio = options.ratio || window.devicePixelRatio || 1;
-    const width = options.width || this.canvas.width / ratio;
-    const height = options.height || this.canvas.height / ratio;
+    options: {
+      ratio?: number;
+      width?: number;
+      height?: number;
+      xOffset?: number;
+      yOffset?: number;
+    } = {},
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      const ratio = options.ratio || window.devicePixelRatio || 1;
+      const width = options.width || this.canvas.width / ratio;
+      const height = options.height || this.canvas.height / ratio;
+      const xOffset = options.xOffset || 0;
+      const yOffset = options.yOffset || 0;
 
-    this._reset();
+      this._reset();
 
-    image.onload = (): void => {
-      this._ctx.drawImage(image, 0, 0, width, height);
-      if (callback) {
-        callback();
-      }
-    };
-    image.onerror = (error): void => {
-      if (callback) {
-        callback(error);
-      }
-    };
-    image.src = dataUrl;
+      image.onload = (): void => {
+        this._ctx.drawImage(image, xOffset, yOffset, width, height);
+        resolve();
+      };
+      image.onerror = (error): void => {
+        reject(error);
+      };
+      image.crossOrigin = 'anonymous';
+      image.src = dataUrl;
 
-    this._isEmpty = false;
+      this._isEmpty = false;
+    });
   }
 
   public toDataURL(type = 'image/png', encoderOptions?: number): string {
@@ -158,7 +169,11 @@ export default class SignaturePad {
     this.canvas.style.touchAction = 'none';
     this.canvas.style.msTouchAction = 'none';
 
-    if (window.PointerEvent && this.usePointerEvents) {
+    const isIOS =/Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
+
+    // The "Scribble" feature of iOS intercepts point events. So that we can lose some of them when tapping rapidly. 
+    // Use touch events for iOS platforms to prevent it. See https://developer.apple.com/forums/thread/664108 for more information.
+    if (window.PointerEvent && this.usePointerEvents && !isIOS) {
       this._handlePointerEvents();
     } else {
       this._handleMouseEvents();
@@ -174,9 +189,9 @@ export default class SignaturePad {
     this.canvas.style.touchAction = 'auto';
     this.canvas.style.msTouchAction = 'auto';
 
-    this.canvas.removeEventListener('pointerdown', this._handleMouseDown);
-    this.canvas.removeEventListener('pointermove', this._handleMouseMove);
-    document.removeEventListener('pointerup', this._handleMouseUp);
+    this.canvas.removeEventListener('pointerdown', this._handlePointerStart);
+    this.canvas.removeEventListener('pointermove', this._handlePointerMove);
+    document.removeEventListener('pointerup', this._handlePointerEnd);
 
     this.canvas.removeEventListener('mousedown', this._handleMouseDown);
     this.canvas.removeEventListener('mousemove', this._handleMouseMove);
@@ -191,16 +206,21 @@ export default class SignaturePad {
     return this._isEmpty;
   }
 
-  public fromData(pointGroups: PointGroup[]): void {
-    this.clear();
+  public fromData(
+    pointGroups: PointGroup[],
+    { clear = true }: FromDataOptions = {},
+  ): void {
+    if (clear) {
+      this.clear();
+    }
 
     this._fromData(
       pointGroups,
-      ({ color, curve }) => this._drawCurve({ color, curve }),
-      ({ color, point }) => this._drawDot({ color, point }),
+      this._drawCurve.bind(this),
+      this._drawDot.bind(this),
     );
 
-    this._data = pointGroups;
+    this._data = clear ? pointGroups : this._data.concat(pointGroups);
   }
 
   public toData(): PointGroup[] {
@@ -209,58 +229,22 @@ export default class SignaturePad {
 
   // Event handlers
 
-  private _handlePointerDown = (event: PointerEvent): void => {
-    // Prevent scrolling.
-    event.preventDefault();
-
-    if (this._pointerID === undefined) {
-      this._pointerID = event.pointerId;
-      this._strokeBegin(event);
-    }
-  };
-
-  private _handlePointerMove = (event: PointerEvent): void => {
-    // Prevent scrolling.
-    event.preventDefault();
-
-    if (this._pointerID === event.pointerId) {
-      this._strokeMoveUpdate(event);
-    }
-  };
-
-  private _handlePointerUp = (event: PointerEvent): void => {
-    const wasCanvasTouched = event.target === this.canvas;
-    if (wasCanvasTouched && this._pointerID === event.pointerId) {
-      event.preventDefault();
-
-      this._strokeEnd(event);
-
-      this._pointerID = undefined;
-    }
-  };
-
   private _handleMouseDown = (event: MouseEvent): void => {
-    event.preventDefault();
-
-    if (event.button === 1) {
-      this._mouseButtonDown = true;
+    if (event.buttons === 1) {
+      this._drawningStroke = true;
       this._strokeBegin(event);
     }
   };
 
   private _handleMouseMove = (event: MouseEvent): void => {
-    event.preventDefault();
-
-    if (this._mouseButtonDown) {
+    if (this._drawningStroke) {
       this._strokeMoveUpdate(event);
     }
   };
 
   private _handleMouseUp = (event: MouseEvent): void => {
-    event.preventDefault();
-
-    if (event.button === 1 && this._mouseButtonDown) {
-      this._mouseButtonDown = false;
+    if (event.buttons === 1 && this._drawningStroke) {
+      this._drawningStroke = false;
       this._strokeEnd(event);
     }
   };
@@ -302,24 +286,46 @@ export default class SignaturePad {
     }
   };
 
+  private _handlePointerStart = (event: PointerEvent): void => {
+    this._drawningStroke = true;
+    event.preventDefault();
+    this._strokeBegin(event);
+  };
+
+  private _handlePointerMove = (event: PointerEvent): void => {
+    if (this._drawningStroke) {
+      event.preventDefault();
+      this._strokeMoveUpdate(event);
+    }
+  };
+
+  private _handlePointerEnd = (event: PointerEvent): void => {
+    this._drawningStroke = false;
+    const wasCanvasTouched = event.target === this.canvas;
+    if (wasCanvasTouched) {
+      event.preventDefault();
+      this._strokeEnd(event);
+    }
+  };
+
   // Private methods
-  private _strokeBegin(event: PointerEvent | MouseEvent | Touch): void {
-    const newPointGroup = {
-      color: this.penColor,
-      data: <any>undefined,
+  private _strokeBegin(event: SignatureEvent): void {
+    this.dispatchEvent(new CustomEvent('beginStroke', { detail: event }));
+
+    const newPointGroup: PointGroup = {
+      dotSize: this.dotSize,
+      minWidth: this.minWidth,
+      maxWidth: this.maxWidth,
+      penColor: this.penColor,
       points: [],
     };
-
-    if (typeof this.onBegin === 'function') {
-      newPointGroup.data = this.onBegin(event);
-    }
 
     this._data.push(newPointGroup);
     this._reset();
     this._strokeUpdate(event);
   }
 
-  private _strokeUpdate(event: PointerEvent | MouseEvent | Touch): void {
+  private _strokeUpdate(event: SignatureEvent): void {
     if (this._data.length === 0) {
       // This can happen if clear() was called while a signature is still in progress,
       // or if there is a race condition between start/update events.
@@ -327,8 +333,18 @@ export default class SignaturePad {
       return;
     }
 
+    this.dispatchEvent(
+      new CustomEvent('beforeUpdateStroke', { detail: event }),
+    );
+
     let x = event.clientX;
     let y = event.clientY;
+    const pressure =
+      (event as PointerEvent).pressure !== undefined
+        ? (event as PointerEvent).pressure
+        : (event as Touch).force !== undefined
+        ? (event as Touch).force
+        : 0;
 
     if (this.transform) {
       const point = this.transform(x, y);
@@ -336,7 +352,7 @@ export default class SignaturePad {
       y = point[1];
     }
 
-    const point = this._createPoint(x, y);
+    const point = this._createPoint(x, y, pressure);
     const lastPointGroup = this._data[this._data.length - 1];
     const lastPoints = lastPointGroup.points;
     const lastPoint =
@@ -344,44 +360,55 @@ export default class SignaturePad {
     const isLastPointTooClose = lastPoint
       ? point.distanceTo(lastPoint) <= this.minDistance
       : false;
-    const color = lastPointGroup.color;
+    const { penColor, dotSize, minWidth, maxWidth } = lastPointGroup;
 
     // Skip this point if it's too close to the previous one
     if (!lastPoint || !(lastPoint && isLastPointTooClose)) {
       const curve = this._addPoint(point);
 
       if (!lastPoint) {
-        this._drawDot({ color, point });
+        this._drawDot(point, {
+          penColor,
+          dotSize,
+          minWidth,
+          maxWidth,
+        });
       } else if (curve) {
-        this._drawCurve({ color, curve });
+        this._drawCurve(curve, {
+          penColor,
+          dotSize,
+          minWidth,
+          maxWidth,
+        });
       }
 
       lastPoints.push({
         time: point.time,
         x: point.x,
         y: point.y,
+        pressure: point.pressure,
       });
     }
+
+    this.dispatchEvent(new CustomEvent('afterUpdateStroke', { detail: event }));
   }
 
-  private _strokeEnd(event: PointerEvent | MouseEvent | Touch): void {
+  private _strokeEnd(event: SignatureEvent): void {
     this._strokeUpdate(event);
 
-    if (typeof this.onEnd === 'function') {
-      this.onEnd(event);
-    }
+    this.dispatchEvent(new CustomEvent('endStroke', { detail: event }));
   }
 
   private _handlePointerEvents(): void {
-    this._mouseButtonDown = false;
+    this._drawningStroke = false;
 
-    this.canvas.addEventListener('pointerdown', this._handlePointerDown);
+    this.canvas.addEventListener('pointerdown', this._handlePointerStart);
     this.canvas.addEventListener('pointermove', this._handlePointerMove);
-    document.addEventListener('pointerup', this._handlePointerUp);
+    document.addEventListener('pointerup', this._handlePointerEnd);
   }
 
   private _handleMouseEvents(): void {
-    this._mouseButtonDown = false;
+    this._drawningStroke = false;
 
     this.canvas.addEventListener('mousedown', this._handleMouseDown);
     this.canvas.addEventListener('mousemove', this._handleMouseMove);
@@ -402,10 +429,15 @@ export default class SignaturePad {
     this._ctx.fillStyle = this.penColor;
   }
 
-  private _createPoint(x: number, y: number): Point {
+  private _createPoint(x: number, y: number, pressure: number): Point {
     const rect = this.canvas.getBoundingClientRect();
 
-    return new Point(x - rect.left, y - rect.top, new Date().getTime());
+    return new Point(
+      x - rect.left,
+      y - rect.top,
+      pressure,
+      new Date().getTime(),
+    );
   }
 
   // Add point to _lastPoints array and generate a new curve if there are enough points (i.e. 3)
@@ -467,15 +499,15 @@ export default class SignaturePad {
     this._isEmpty = false;
   }
 
-  private _drawCurve({ color, curve }: { color: string; curve: Bezier }): void {
+  private _drawCurve(curve: Bezier, options: PointGroupOptions): void {
     const ctx = this._ctx;
     const widthDelta = curve.endWidth - curve.startWidth;
     // '2' is just an arbitrary number here. If only lenght is used, then
     // there are gaps between curve segments :/
-    const drawSteps = Math.floor(curve.length()) * 2;
+    const drawSteps = Math.ceil(curve.length()) * 2;
 
     ctx.beginPath();
-    ctx.fillStyle = color;
+    ctx.fillStyle = options.penColor;
 
     for (let i = 0; i < drawSteps; i += 1) {
       // Calculate the Bezier (x, y) coordinate for this step.
@@ -498,7 +530,7 @@ export default class SignaturePad {
 
       const width = Math.min(
         curve.startWidth + ttt * widthDelta,
-        this.maxWidth,
+        options.maxWidth,
       );
       this._drawCurveSegment(x, y, width);
     }
@@ -507,21 +539,17 @@ export default class SignaturePad {
     ctx.fill();
   }
 
-  private _drawDot({
-    color,
-    point,
-  }: {
-    color: string;
-    point: BasicPoint;
-  }): void {
+  private _drawDot(point: BasicPoint, options: PointGroupOptions): void {
     const ctx = this._ctx;
     const width =
-      typeof this.dotSize === 'function' ? this.dotSize() : this.dotSize;
+      options.dotSize > 0
+        ? options.dotSize
+        : (options.minWidth + options.maxWidth) / 2;
 
     ctx.beginPath();
     this._drawCurveSegment(point.x, point.y, width);
     ctx.closePath();
-    ctx.fillStyle = color;
+    ctx.fillStyle = options.penColor;
     ctx.fill();
   }
 
@@ -531,7 +559,7 @@ export default class SignaturePad {
     drawDot: SignaturePad['_drawDot'],
   ): void {
     for (const group of pointGroups) {
-      const { color, points } = group;
+      const { penColor, dotSize, minWidth, maxWidth, points } = group;
 
       if (this.applyData) {
         this.applyData(group);
@@ -540,11 +568,16 @@ export default class SignaturePad {
       if (points.length > 1) {
         for (let j = 0; j < points.length; j += 1) {
           const basicPoint = points[j];
-          const point = new Point(basicPoint.x, basicPoint.y, basicPoint.time);
+          const point = new Point(
+            basicPoint.x,
+            basicPoint.y,
+            basicPoint.pressure,
+            basicPoint.time,
+          );
 
           // All points in the group have the same color, so it's enough to set
           // penColor just at the beginning.
-          this.penColor = color;
+          this.penColor = penColor;
 
           if (j === 0) {
             this._reset();
@@ -553,15 +586,22 @@ export default class SignaturePad {
           const curve = this._addPoint(point);
 
           if (curve) {
-            drawCurve({ color, curve });
+            drawCurve(curve, {
+              penColor,
+              dotSize,
+              minWidth,
+              maxWidth,
+            });
           }
         }
       } else {
         this._reset();
 
-        drawDot({
-          color,
-          point: points[0],
+        drawDot(points[0], {
+          penColor,
+          dotSize,
+          minWidth,
+          maxWidth,
         });
       }
     }
@@ -582,7 +622,7 @@ export default class SignaturePad {
     this._fromData(
       pointGroups,
 
-      ({ color, curve }: { color: string; curve: Bezier }) => {
+      (curve, { penColor }) => {
         const path = document.createElement('path');
 
         // Need to check curve for NaN values, these pop up when drawing
@@ -604,7 +644,7 @@ export default class SignaturePad {
             `${curve.endPoint.x.toFixed(3)},${curve.endPoint.y.toFixed(3)}`;
           path.setAttribute('d', attr);
           path.setAttribute('stroke-width', (curve.endWidth * 2.25).toFixed(3));
-          path.setAttribute('stroke', color);
+          path.setAttribute('stroke', penColor);
           path.setAttribute('fill', 'none');
           path.setAttribute('stroke-linecap', 'round');
 
@@ -613,14 +653,13 @@ export default class SignaturePad {
         /* eslint-enable no-restricted-globals */
       },
 
-      ({ color, point }: { color: string; point: BasicPoint }) => {
+      (point, { penColor, dotSize, minWidth, maxWidth }) => {
         const circle = document.createElement('circle');
-        const dotSize =
-          typeof this.dotSize === 'function' ? this.dotSize() : this.dotSize;
-        circle.setAttribute('r', dotSize.toString());
+        const size = dotSize > 0 ? dotSize : (minWidth + maxWidth) / 2;
+        circle.setAttribute('r', size.toString());
         circle.setAttribute('cx', point.x.toString());
         circle.setAttribute('cy', point.y.toString());
-        circle.setAttribute('fill', color);
+        circle.setAttribute('fill', penColor);
 
         svg.appendChild(circle);
       },
@@ -631,7 +670,7 @@ export default class SignaturePad {
       '<svg' +
       ' xmlns="http://www.w3.org/2000/svg"' +
       ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
-      ` viewBox="${minX} ${minY} ${maxX} ${maxY}"` +
+      ` viewBox="${minX} ${minY} ${this.canvas.width} ${this.canvas.height}"` +
       ` width="${maxX}"` +
       ` height="${maxY}"` +
       '>';

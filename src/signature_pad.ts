@@ -32,6 +32,7 @@ export interface Options {
   onEnd?: (event: MouseEvent | Touch) => void;
   applyData?: (data: any) => any;
   transform?: (x: number, y: number) => [number, number];
+  usePointerEvents?: boolean;
 }
 
 export interface PointGroup {
@@ -53,6 +54,7 @@ export default class SignaturePad {
   public onEnd?: (event: MouseEvent | Touch) => void;
   public applyData?: (data: any) => any;
   public transform?: (x: number, y: number) => [number, number];
+  public usePointerEvents?: boolean;
 
   // Private stuff
   /* tslint:disable: variable-name */
@@ -88,6 +90,7 @@ export default class SignaturePad {
     this.onBegin = options.onBegin;
     this.onEnd = options.onEnd;
     this.transform = options.transform;
+    this.usePointerEvents = options.usePointerEvents || true;
 
     this._strokeMoveUpdate = this.throttle
       ? throttle(SignaturePad.prototype._strokeUpdate, this.throttle)
@@ -155,7 +158,7 @@ export default class SignaturePad {
     this.canvas.style.touchAction = 'none';
     this.canvas.style.msTouchAction = 'none';
 
-    if (window.PointerEvent) {
+    if (window.PointerEvent && this.usePointerEvents) {
       this._handlePointerEvents();
     } else {
       this._handleMouseEvents();

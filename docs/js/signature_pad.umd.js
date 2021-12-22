@@ -160,20 +160,28 @@
                 event.preventDefault();
                 if (event.targetTouches.length === 1) {
                     const touch = event.changedTouches[0];
+                    this._pointerID = touch.identifier;
                     this._strokeBegin(touch);
                 }
             };
             this._handleTouchMove = (event) => {
                 event.preventDefault();
-                const touch = event.targetTouches[0];
-                this._strokeMoveUpdate(touch);
+                if (this._pointerID !== undefined) {
+                    const touch = event.targetTouches.item(this._pointerID);
+                    if (touch) {
+                        this._strokeMoveUpdate(touch);
+                    }
+                }
             };
             this._handleTouchEnd = (event) => {
                 const wasCanvasTouched = event.target === this.canvas;
-                if (wasCanvasTouched) {
+                if (wasCanvasTouched && this._pointerID !== undefined) {
                     event.preventDefault();
-                    const touch = event.changedTouches[0];
-                    this._strokeEnd(touch);
+                    const touch = event.changedTouches.item(this._pointerID);
+                    if (touch) {
+                        this._strokeEnd(touch);
+                        this._pointerID = undefined;
+                    }
                 }
             };
             this._handlePointerStart = (event) => {
@@ -203,6 +211,10 @@
             this.dotSize = options.dotSize || 0;
             this.penColor = options.penColor || 'black';
             this.backgroundColor = options.backgroundColor || 'rgba(0,0,0,0)';
+            this.onBegin = options.onBegin;
+            this.onEnd = options.onEnd;
+            this.transform = options.transform;
+            this.usePointerEvents = options.usePointerEvents || true;
             this._strokeMoveUpdate = this.throttle
                 ? throttle(SignaturePad.prototype._strokeUpdate, this.throttle)
                 : SignaturePad.prototype._strokeUpdate;
@@ -252,7 +264,7 @@
             this.canvas.style.touchAction = 'none';
             this.canvas.style.msTouchAction = 'none';
             const isIOS = /Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
-            if (window.PointerEvent && !isIOS) {
+            if (window.PointerEvent && this.usePointerEvents && !isIOS) {
                 this._handlePointerEvents();
             }
             else {
@@ -307,13 +319,18 @@
                 return;
             }
             this.dispatchEvent(new CustomEvent('beforeUpdateStroke', { detail: event }));
-            const x = event.clientX;
-            const y = event.clientY;
+            let x = event.clientX;
+            let y = event.clientY;
             const pressure = event.pressure !== undefined
                 ? event.pressure
                 : event.force !== undefined
                     ? event.force
                     : 0;
+            if (this.transform) {
+                const point = this.transform(x, y);
+                x = point[0];
+                y = point[1];
+            }
             const point = this._createPoint(x, y, pressure);
             const lastPointGroup = this._data[this._data.length - 1];
             const lastPoints = lastPointGroup.points;
@@ -456,6 +473,9 @@
         _fromData(pointGroups, drawCurve, drawDot) {
             for (const group of pointGroups) {
                 const { penColor, dotSize, minWidth, maxWidth, points } = group;
+                if (this.applyData) {
+                    this.applyData(group);
+                }
                 if (points.length > 1) {
                     for (let j = 0; j < points.length; j += 1) {
                         const basicPoint = points[j];

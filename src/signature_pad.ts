@@ -77,10 +77,7 @@ export default class SignaturePad extends EventTarget {
   private _pointerID?: number;
   /* tslint:enable: variable-name */
 
-  constructor(
-    private canvas: HTMLCanvasElement,
-    options: Options = {},
-  ) {
+  constructor(private canvas: HTMLCanvasElement, options: Options = {}) {
     super();
     this.velocityFilterWeight = options.velocityFilterWeight || 0.7;
     this.minWidth = options.minWidth || 0.5;
@@ -95,7 +92,7 @@ export default class SignaturePad extends EventTarget {
     this.onBegin = options.onBegin;
     this.onEnd = options.onEnd;
     this.transform = options.transform;
-    this.usePointerEvents = options.usePointerEvents || true;
+    this.usePointerEvents = options.usePointerEvents == false ? false : true;
 
     this._strokeMoveUpdate = this.throttle
       ? throttle(SignaturePad.prototype._strokeUpdate, this.throttle)
@@ -169,9 +166,10 @@ export default class SignaturePad extends EventTarget {
     this.canvas.style.touchAction = 'none';
     this.canvas.style.msTouchAction = 'none';
 
-    const isIOS =/Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
+    const isIOS =
+      /Macintosh/.test(navigator.userAgent) && 'ontouchstart' in document;
 
-    // The "Scribble" feature of iOS intercepts point events. So that we can lose some of them when tapping rapidly. 
+    // The "Scribble" feature of iOS intercepts point events. So that we can lose some of them when tapping rapidly.
     // Use touch events for iOS platforms to prevent it. See https://developer.apple.com/forums/thread/664108 for more information.
     if (window.PointerEvent && this.usePointerEvents && !isIOS) {
       this._handlePointerEvents();

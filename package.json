@@ -24,7 +24,7 @@
     "emit-types": "del dist/types && tsc src/signature_pad.ts --lib DOM,ES2015 --declaration --declarationDir dist/types --emitDeclarationOnly",
     "format": "prettier --write {src,tests}/**/*.{js,ts}",
     "lint": "eslint {src,tests}/**/*.ts",
-    "prepublishOnly": "npm run build",
+    "prepublish": "npm run build",
     "serve": "serve -l 9000 docs",
     "start": "npm run build && npm run serve",
     "test": "jest --coverage",

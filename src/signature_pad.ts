@@ -67,7 +67,7 @@ export default class SignaturePad extends EventTarget {
   // Private stuff
   /* tslint:disable: variable-name */
   private _ctx: CanvasRenderingContext2D;
-  private _drawningStroke: boolean;
+  private _drawingStroke: boolean;
   private _isEmpty: boolean;
   private _lastPoints: Point[]; // Stores up to 4 most recent points; used to generate a new curve
   private _data: PointGroup[]; // Stores all points in groups (one group per line or dot)
@@ -228,21 +228,21 @@ export default class SignaturePad extends EventTarget {
   // Event handlers
 
   private _handleMouseDown = (event: MouseEvent): void => {
-    if (event.buttons === 1) {
-      this._drawningStroke = true;
+    if (event.buttons === 0) {
+      this._drawingStroke = true;
       this._strokeBegin(event);
     }
   };
 
   private _handleMouseMove = (event: MouseEvent): void => {
-    if (this._drawningStroke) {
+    if (this._drawingStroke) {
       this._strokeMoveUpdate(event);
     }
   };
 
   private _handleMouseUp = (event: MouseEvent): void => {
-    if (event.buttons === 1 && this._drawningStroke) {
-      this._drawningStroke = false;
+    if (event.button === 0 && this._drawingStroke) {
+      this._drawingStroke = false;
       this._strokeEnd(event);
     }
   };
@@ -255,6 +255,8 @@ export default class SignaturePad extends EventTarget {
       const touch = event.changedTouches[0];
       this._pointerID = touch.identifier;
       this._strokeBegin(touch);
+    } else {
+      this._pointerID = undefined;
     }
   };
 
@@ -285,20 +287,20 @@ export default class SignaturePad extends EventTarget {
   };
 
   private _handlePointerStart = (event: PointerEvent): void => {
-    this._drawningStroke = true;
+    this._drawingStroke = true;
     event.preventDefault();
     this._strokeBegin(event);
   };
 
   private _handlePointerMove = (event: PointerEvent): void => {
-    if (this._drawningStroke) {
+    if (this._drawingStroke) {
       event.preventDefault();
       this._strokeMoveUpdate(event);
     }
   };
 
   private _handlePointerEnd = (event: PointerEvent): void => {
-    this._drawningStroke = false;
+    this._drawingStroke = false;
     const wasCanvasTouched = event.target === this.canvas;
     if (wasCanvasTouched) {
       event.preventDefault();
@@ -320,7 +322,7 @@ export default class SignaturePad extends EventTarget {
 
     this._data.push(newPointGroup);
     this._reset();
-    this._strokeUpdate(event);
+    // this._strokeUpdate(event);
   }
 
   private _strokeUpdate(event: SignatureEvent): void {
@@ -398,7 +400,7 @@ export default class SignaturePad extends EventTarget {
   }
 
   private _handlePointerEvents(): void {
-    this._drawningStroke = false;
+    this._drawingStroke = false;
 
     this.canvas.addEventListener('pointerdown', this._handlePointerStart);
     this.canvas.addEventListener('pointermove', this._handlePointerMove);
@@ -406,7 +408,7 @@ export default class SignaturePad extends EventTarget {
   }
 
   private _handleMouseEvents(): void {
-    this._drawningStroke = false;
+    this._drawingStroke = false;
 
     this.canvas.addEventListener('mousedown', this._handleMouseDown);
     this.canvas.addEventListener('mousemove', this._handleMouseMove);

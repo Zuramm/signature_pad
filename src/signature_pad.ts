@@ -228,7 +228,7 @@ export default class SignaturePad extends EventTarget {
   // Event handlers
 
   private _handleMouseDown = (event: MouseEvent): void => {
-    if (event.buttons === 0) {
+    if (event.button === 0) {
       this._drawingStroke = true;
       this._strokeBegin(event);
     }
